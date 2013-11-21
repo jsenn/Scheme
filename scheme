@@ -1,0 +1,6 @@
+INITIAL_DIR=`pwd`
+cd ~/scheme
+ghc -o lib/interp -O2 src/interp.hs
+./lib/interp src/stdlib.scm
+cd ${INITIAL_DIR}
+
