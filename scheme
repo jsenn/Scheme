@@ -1,6 +1,9 @@
 INITIAL_DIR=`pwd`
 cd ~/scheme
-ghc -o lib/interp -O2 src/interp.hs
-./lib/interp src/stdlib.scm
+if [ ! -d "$BIN" ]; then
+  mkdir bin
+fi
+ghc -o bin/interp -O2 src/interp.hs
+./bin/interp src/stdlib.scm
 cd ${INITIAL_DIR}
 
