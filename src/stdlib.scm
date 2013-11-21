@@ -1,3 +1,5 @@
+(define (identity x) x)
+
 (define (curry f . args)
   (lambda (next . rest)
     (apply f (concat (append args next) rest))))
@@ -31,15 +33,16 @@
     (cons init '())
     (cons init (unfold f (f init) pred))))
 
-(define (map f xs) (foldr (lambda (x y) (cons (f x) y))
+(define (map f xs) (foldr (lambda (x y)
+                            (cons (f x) y))
                           '()
                           xs))
 
 (define (filter pred xs)
   (foldr (lambda (x y)
-                 (if (pred x)
-                   (cons x y)
-                   y))
+           (if (pred x)
+             (cons x y)
+             y))
          '()
          xs))
 
@@ -49,7 +52,6 @@
 (define length (curry fold (lambda (x y) (inc x)) 0))
 (define reverse (curry foldl (flip cons) '()))
 
-(define (identity x) x)
 (define inc (curry + 1))
 (define dec (curry (flip -) 1))
 (define zero? (curry = 0))
@@ -67,8 +69,14 @@
 (define odd? (compose not even?))
 
 (define (max first . rest)
-  (fold (lambda (old new) (if (> old new) old new)) first rest))
+  (fold (lambda (old new)
+          (if (> old new) old new))
+        first
+        rest))
 
 (define (min first . rest)
-  (fold (lambda (old new) (if (< old new) old new)) first rest))
+  (fold (lambda (old new)
+          (if (< old new) old new))
+        first
+        rest))
 
