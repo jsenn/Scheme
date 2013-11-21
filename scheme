@@ -1,4 +1,4 @@
-if [ ! -d "$BIN" ]; then
+if [ ! -d "bin" ]; then
   mkdir bin
 fi
 ghc -o bin/interp -O2 src/interp.hs
