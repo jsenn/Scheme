@@ -355,7 +355,7 @@ exptLisp (a:b:rest) = throwTypeError " numbers" (List (a:b:rest))
 sqrtLisp [Integer n] = sqrtLisp [Float (fromIntegral n)]
 sqrtLisp [Float x] = if x < 0
                        then throwError $ Default "No complex numbers yet!"
-                       else (return . Float) (sqrt x)
+                       else (return . demote . Float) (sqrt x)
 sqrtLisp (a:b:rest) = throwError $ NumArgs 1 (a:b:rest)
 sqrtLisp [notNum] = throwTypeError " a number" notNum
 
