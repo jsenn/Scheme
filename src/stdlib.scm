@@ -52,16 +52,17 @@
 (define length (curry fold (lambda (x y) (inc x)) 0))
 (define reverse (curry foldl (flip cons) '()))
 
-(define inc (curry + 1))
-(define dec (curry (flip -) 1))
 (define zero? (curry = 0))
 (define positive? (curry < 0))
 (define negative? (curry > 0))
 (define nonzero? (compose not zero?))
 (define nonpositive? (compose not positive?))
 (define nonnegative? (compose not negative?))
+
+(define inc (curry + 1))
+(define dec (curry (flip -) 1))
 (define (abs n) (if (positive? n) n (* -1 n)))
-(define (! n) (if (<= n 1) 1 (apply * (range 1 (inc n)))))
+(define (! n) (fold * 1 (range 1 (inc n))))
 
 (define (even? n)
   (= 0 (mod n 2)))

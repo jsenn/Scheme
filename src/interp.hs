@@ -1,6 +1,7 @@
 module Main where
 import Control.Monad.Error
 import Data.IORef
+import Data.Maybe
 import System.Environment
 import System.IO
 import Text.ParserCombinators.Parsec hiding (spaces)
@@ -41,8 +42,8 @@ escapedChar = do
              '\\' -> [c]
  
 parseString =
-  between quote quote (many $ many1 (noneOf "\"\\") <|> escapedChar) >>=
-  return . String . concat
+  liftM (String . concat)
+        (between quote quote (many $ many1 (noneOf "\"\\") <|> escapedChar))
 
 symbol  = oneOf "!$%&|*+-/:<=?>@~_^#"
 bracket = oneOf "(){}[]"
@@ -61,22 +62,21 @@ specialChar = do
              "space"   -> ' '
              "newline" -> '\n'
  
-parseCharacter = hash >> backslash >>
-                 (specialChar <|> normalChar) >>=
-                 (return . Character)
+parseCharacter = liftM Character
+                       (hash >> backslash >> (specialChar <|> normalChar))
 
 parseAtom = do
   first <- letter <|> symbol
   rest  <- many (letter <|> digit <|> symbol)
-  let atom = [first] ++ rest
+  let atom = first : rest
   return $ case atom of
              "#t" -> Bool True
              "#f" -> Bool False
              ____ -> Atom atom
 
-parseFloat = float >>= (return . Float . read)
+parseFloat = liftM (Float . read) float
 
-parseNegFloat = char '-' >> float >>= (return . Float . read . (++) "-")
+parseNegFloat = liftM (Float . read . (++) "-") (char '-' >> float)
 
 float = do
   intPart <- integer
@@ -84,24 +84,23 @@ float = do
   floatPart <- integer
   return (intPart ++ "." ++ floatPart)
 
-parseInteger = integer >>= (return . Integer . read)
+parseInteger = liftM (Integer . read) integer
 
-parseNegInt = char '-' >> integer >>= (return . Integer . read . (++) "-")
+parseNegInt = liftM (Integer . read . (++) "-") (char '-' >> integer)
 
 integer = many1 digit
 
 spaces :: Parser ()
 spaces = skipMany1 space
 
-parseList = sepBy parseExpr spaces >>= (return . List)
+parseList = liftM List (sepBy parseExpr spaces)
 
 parseDottedList = do
   head <- endBy parseExpr spaces
   tail <- char '.' >> spaces >> parseExpr
   return $ DottedList head tail
 
-parseAnyList =
-  between (char '(') (char ')') (try parseList <|> parseDottedList) >>= return
+parseAnyList = between (char '(') (char ')') (try parseList <|> parseDottedList)
 
 parseQuoted = do
   char '\''
@@ -156,11 +155,11 @@ showLispList = unwords . map showLispVal
 instance Show LispVal where show = showLispVal
 
 eval :: Env -> LispVal -> IOThrowsError LispVal
-eval env val@(Undefined)   = return val
+eval env val@Undefined     = return val
 eval env val@(Bool _)      = return val
 eval env val@(Float _)     = return val
 eval env val@(String _)    = return val
-eval env val@(Integer _)    = return val
+eval env val@(Integer _)   = return val
 eval env val@(Character _) = return val
 
 eval env (Atom name) = getVar env name
@@ -218,9 +217,9 @@ apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
 apply (PrimitiveFunc func) args = (liftThrows . func) args
 apply (IOFunc func) args = func args
 apply (Func body params varargs closure) args =
-  if len params /= len args && varargs == Nothing
+  if len params /= len args && isNothing varargs
     then throwError $ NumArgs (len params) args
-    else (liftIO $ bindVars closure $ zip params args) >>=
+    else liftIO (bindVars closure $ zip params args) >>=
          bindVarArgs varargs >>= evalBody
   where len = toInteger . length
         evalBody env = liftM last $ mapM (eval env) body
@@ -317,7 +316,7 @@ isPort [Port _] = (return . Bool) True
 isPort [_] = (return . Bool) False
 isPort (a:b:rest) = throwError $ NumArgs 1 (a:b:rest)
 
-isProcedure [Func _ _ _ _] = (return . Bool) True
+isProcedure [Func{}] = (return . Bool) True
 isProcedure [IOFunc _] = (return . Bool) True
 isProcedure [PrimitiveFunc _] = (return . Bool) True
 isProcedure [_] = (return . Bool) False
@@ -345,8 +344,8 @@ foldOrThrow f args = if length args <= 1
                        else return $ foldl1 f args
 
 exptLisp [Integer m, Integer n] = (return . Integer) (m ^ n)
-exptLisp [Integer m, y@(Float _)] = exptLisp [(Float (fromIntegral m)), y]
-exptLisp [x@(Float _), Integer n] = exptLisp [x, (Float (fromIntegral n))]
+exptLisp [Integer m, y@(Float _)] = exptLisp [Float (fromIntegral m), y]
+exptLisp [x@(Float _), Integer n] = exptLisp [x, Float (fromIntegral n)]
 exptLisp [Float x, Float y] = (return . Float) (x ** y)
 exptLisp singleVal@[_] = throwError $ NumArgs 2 singleVal
 exptLisp tooMany@(a:b:c:rest)  = throwError $ NumArgs 2 tooMany
@@ -381,7 +380,7 @@ regularBinop :: (LispVal -> ThrowsError a) -> (b -> LispVal) ->
 regularBinop unpacker constructor op args =
   if length args /= 2
     then throwError $ NumArgs 2 args
-    else do left  <- unpacker $ args !! 0
+    else do left  <- unpacker $ head args
             right <- unpacker $ args !! 1
             (return . constructor) (left `op` right)
 
@@ -433,17 +432,17 @@ cat [List _, notList] = throwTypeError "list" notList
 throwTypeError expected found = throwError $ TypeError expected found
 
 eqv :: [LispVal] -> ThrowsError LispVal
-eqv [(Atom x), (Atom y)]           = (return . Bool) (x == y)
-eqv [(Bool x), (Bool y)]           = (return . Bool) (x == y)
-eqv [(Float x), (Float y)]         = (return . Bool) (x == y)
-eqv [(Integer x), (Integer y)]     = (return . Bool) (x == y)
-eqv [(String x), (String y)]       = (return . Bool) (x == y)
-eqv [(Character x), (Character y)] = (return . Bool) (x == y)
-eqv [(DottedList xs x), (DottedList ys y)] = eqv [l1, l2]
+eqv [Atom x, Atom y]           = (return . Bool) (x == y)
+eqv [Bool x, Bool y]           = (return . Bool) (x == y)
+eqv [Float x, Float y]         = (return . Bool) (x == y)
+eqv [Integer x, Integer y]     = (return . Bool) (x == y)
+eqv [String x, String y]       = (return . Bool) (x == y)
+eqv [Character x, Character y] = (return . Bool) (x == y)
+eqv [DottedList xs x, DottedList ys y] = eqv [l1, l2]
   where l1 = List (xs ++ [x])
         l2 = List (ys ++ [y])
-eqv [(List x), (List y)] = (return . Bool) $
-  (length x == length y) && (and $ map eqvPair (zip x y))
+eqv [List x, List y] = (return . Bool) $
+  (length x == length y) && all eqvPair (zip x y)
   where eqvPair (p, q) = case eqv [p, q] of
                            Left err -> False
                            Right (Bool val) -> val
@@ -512,11 +511,10 @@ liftThrows (Left err)  = throwError err
 liftThrows (Right val) = return val
 
 runIOThrows :: IOThrowsError String -> IO String
-runIOThrows action = runErrorT (trapError action) >>= return . extractValue
+runIOThrows action = liftM extractValue (runErrorT (trapError action))
 
 isBound :: Env -> String -> IO Bool
-isBound envRef var =
-  readIORef envRef >>= return . (maybe False (const True)) . lookup var
+isBound envRef var = liftM (isJust . lookup var) (readIORef envRef)
 
 getVar :: Env -> String -> IOThrowsError LispVal
 getVar envRef var = do
@@ -527,7 +525,7 @@ setVar :: Env -> String -> LispVal -> IOThrowsError LispVal
 setVar envRef name val = do
   env <- (liftIO . readIORef) envRef
   maybe (throwError $ UnboundVar name)
-        (liftIO . (flip writeIORef val))
+        (liftIO . flip writeIORef val)
         (lookup name env)
   return val
 
@@ -550,9 +548,9 @@ bindVars envRef bindings =
                                     return (name, valRef)
 
 primitiveBindings :: IO Env
-primitiveBindings = newEnv >>= (flip bindVars $
-                                map (makeFunc PrimitiveFunc) primitives ++
-                                map (makeFunc IOFunc) ioPrimitives)
+primitiveBindings = newEnv >>= flip bindVars
+                                    (map (makeFunc PrimitiveFunc) primitives ++
+                                     map (makeFunc IOFunc) ioPrimitives)
   where makeFunc constructor (name, func) = (name, constructor func)
 
 newEnv :: IO Env
@@ -578,7 +576,7 @@ runFile :: [String] -> IO ()
 runFile args = do
   env <- primitiveBindings >>= flip bindVars [("--args",
                                               (List . map String . tail) args)]
-  (runIOThrows $ liftM show $ eval env (List [Atom "load", String (args !! 0)]))
+  runIOThrows $ liftM show $ eval env (List [Atom "load", String (head args)])
   loop env
 
 readPrompt :: String -> IO String
