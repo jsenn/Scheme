@@ -65,7 +65,7 @@
 (define (! n) (fold * 1 (range 1 (inc n))))
 
 (define (even? n)
-  (= 0 (mod n 2)))
+  (zero? (mod n 2)))
 
 (define odd? (compose not even?))
 
